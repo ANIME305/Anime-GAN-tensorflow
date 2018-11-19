@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('--tfr_dir', type=str, default='dataset/tfrs/', help='dir to save tfrs')
     parser.add_argument('--input_dir', type=str, default='dataset/GetChu/',
                         help='the dir of input imgs with preprocess')
-    parser.add_argument('--checkpoint_dir', type=str, default='checkpoint',
+    parser.add_argument('--checkpoint_dir', type=str, default='checkpoint/',
                         help='Directory name to save the checkpoints')
     parser.add_argument('--restore', type=bool, default=False, help='whether to load trained models')
     parser.add_argument('--result_dir', type=str, default='results/',
@@ -43,6 +43,7 @@ def parse_args():
 
 
 def check_args(args):
+    args.checkpoint_dir += args.name
     args.result_dir += args.name
     assert args.sample_num % math.sqrt(args.sample_num) == 0
     assert os.path.exists(args.input_dir)
@@ -90,6 +91,7 @@ def main():
             tf.logging.info("***** Epoch %d *****", i_epoch + 1)
             # training
             model.train_epoch(sess, train_next_element, i_epoch, n_batch)
+            saver.save(sess, os.path.join(args.checkpoint_dir, 'model.ckpt'), global_step=str((i_epoch + 1) * n_batch))
 
 
 if __name__ == '__main__':
