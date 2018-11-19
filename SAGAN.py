@@ -1,6 +1,9 @@
 from layers import *
 from tensor2tensor.layers.common_layers import upscale
 import numpy as np
+import time
+from utils import util
+import os
 
 
 class SAGAN_model(object):
@@ -89,10 +92,12 @@ class SAGAN_model(object):
 
             if self.args.up_sample:
                 x = upscale(x, f=2)
-                x = spectral_conv2d(x, filters=self.args.img_size[2], kernel_size=3, stride=1, is_training=self.is_training,
+                x = spectral_conv2d(x, filters=self.args.img_size[2], kernel_size=3, stride=1,
+                                    is_training=self.is_training,
                                     padding='SAME', scope='G_conv_logit')
             else:
-                x = spectral_deconv2d(x, filters=self.args.img_size[2], kernel_size=4, stride=2, is_training=self.is_training,
+                x = spectral_deconv2d(x, filters=self.args.img_size[2], kernel_size=4, stride=2,
+                                      is_training=self.is_training,
                                       use_bias=False, scope='G_deconv_logit')
             x = tf.nn.tanh(x)
 
@@ -132,3 +137,42 @@ class SAGAN_model(object):
             x = tf.squeeze(x, axis=[1, 2])
 
             return x
+
+    def preprocess(self, x):
+        x = x / 127.5 - 1
+        return x
+
+    def train_epoch(self, sess, train_next_element, i_epoch, n_batch):
+        t_start = None
+        for i_batch in range(n_batch):
+            if i_batch == 1:
+                t_start = time.time()
+            batch_imgs = sess.run(train_next_element)
+            batch_imgs = self.preprocess(batch_imgs)
+            batch_z = np.random.uniform(-1, 1, [self.args.batch_size, 1, 1, self.args.z_dim])
+            feed_dict_ = {self.inputs: batch_imgs,
+                          self.z: batch_z,
+                          self.is_training: True}
+            # update D network
+            _, d_loss = sess.run([self.d_opt, self.d_loss], feed_dict=feed_dict_)
+
+            # update G network
+            g_loss = None
+            if i_batch % self.args.n_critic == 0:
+                _, g_loss = sess.run([self.g_opt, self.g_loss], feed_dict=feed_dict_)
+
+            last_train_str = "[epoch:%d/%d, steps:%d/%d] -d_loss:%.4f - g_loss:%.4f" % (
+                i_epoch + 1, int(self.args.epochs), i_batch + 1, n_batch, d_loss, g_loss)
+            if i_batch > 0:
+                last_train_str += (' -ETA:%ds' % util.cal_ETA(t_start, i_batch, n_batch))
+            if (i_batch + 1) % 50 == 0 or i_batch == 0:
+                tf.logging.info(last_train_str)
+
+            # show fake_imgs
+            if (i_batch + 1) % self.args.show_steps == 0:
+                steps = i_epoch * n_batch + i_batch + 1
+                tf.logging.info('generating fake imgs in steps %d...' % steps)
+                fake_imgs = sess.run(self.fake_images, feed_dict={self.z: batch_z})
+                manifold_h = int(np.floor(np.sqrt(self.args.sample_num)))
+                util.save_images(fake_imgs, [manifold_h, manifold_h],
+                                 image_path=os.path.join(self.args.result_dir,'fake_steps_' + str(steps) + '.jpg'))
