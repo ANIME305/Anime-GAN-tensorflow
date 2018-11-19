@@ -1,4 +1,4 @@
-# Love And Pease
+# Love And Peace
 
 ### SA-GAN
 ![Image text](MODEL.png)
