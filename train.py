@@ -6,6 +6,8 @@ from glob import glob
 import tensorflow as tf
 import math
 
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+
 
 def parse_args():
     desc = "Self-Attention GAN"
@@ -19,9 +21,9 @@ def parse_args():
     parser.add_argument('--d_filters', type=int, default=64, help='The filters in discriminator')
     parser.add_argument('--g_filters', type=int, default=1024, help='The filters in generator')
 
-    parser.add_argument('--epochs', type=int, default=100, help='Total epochs to train')
+    parser.add_argument('--epochs', type=int, default=500, help='Total epochs to train')
     parser.add_argument('--batch_size', type=int, default=64, help='The size of batch')
-    parser.add_argument('--show_steps', type=int, default=500, help='steps to show imgs')
+    parser.add_argument('--show_steps', type=int, default=222, help='steps to show imgs')
     parser.add_argument('--sample_num', type=int, default=36, help='num of imgs to show')
     parser.add_argument('--max_to_keep', type=int, default=10, help='num of saved models to keep')
 
@@ -32,7 +34,7 @@ def parse_args():
     parser.add_argument('--n_critic', type=int, default=1, help='The number of critic')
 
     parser.add_argument('--tfr_dir', type=str, default='dataset/tfrs/', help='dir to save tfrs')
-    parser.add_argument('--input_dir', type=str, default='dataset/GetChu/',
+    parser.add_argument('--input_dir', type=str, default='dataset/GetChu_aligned/',
                         help='the dir of input imgs with preprocess')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoint/',
                         help='Directory name to save the checkpoints')
@@ -72,7 +74,9 @@ def main():
     train_next_element = train_iterator.get_next()
 
     # open session
-    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+    sess_config = tf.ConfigProto(allow_soft_placement=True)
+    sess_config.gpu_options.allow_growth = True
+    with tf.Session(config=sess_config) as sess:
         model = SAGAN.SAGAN_model(args)
         tf.logging.info('model init over...')
 
@@ -86,12 +90,14 @@ def main():
         # saver to save model
         saver = tf.train.Saver(max_to_keep=args.max_to_keep)
 
-        n_batch = args.epochs // args.batch_size
+        n_batch = total_num // args.batch_size
+        global_step = 0
         for i_epoch in range(args.epochs):
             tf.logging.info("***** Epoch %d *****", i_epoch + 1)
             # training
-            model.train_epoch(sess, train_next_element, i_epoch, n_batch)
-            saver.save(sess, os.path.join(args.checkpoint_dir, 'model.ckpt'), global_step=str((i_epoch + 1) * n_batch))
+            global_step = model.train_epoch(sess, train_next_element, i_epoch, n_batch, global_step)
+            tf.logging.info('Saving model...')
+            saver.save(sess, os.path.join(args.checkpoint_dir, 'model.ckpt'), global_step=global_step)
 
 
 if __name__ == '__main__':

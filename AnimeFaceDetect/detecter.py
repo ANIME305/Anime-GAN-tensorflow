@@ -1,9 +1,7 @@
 import cv2
 from glob import glob
 
-imgs1 = glob('../dataset/FusionPics/origin/*.jpg')
-imgs2 = glob('../dataset/FusionPics/origin/*.png')
-imgs = imgs1 + imgs2
+imgs = glob('../dataset/GetChu/*')
 print(len(imgs))
 
 from tqdm import tqdm
@@ -27,12 +25,12 @@ def detect_face(imgs):
             sty = max(0, sty)
             name = img.split('/')[-1].split('.')[0] + '_face' + str(i) + '.jpg'
             img_new = img_temp[int(sty):int(sty + h), int(stx):int(stx + w), :]
-            cv2.imwrite('../dataset/FusionPics/detected/' + name, img_new)
+            cv2.imwrite('../dataset/GetChu_aligned/' + name, img_new)
 
 
 from multiprocessing import Pool
 # 分割path
-split_num=6
+split_num=4
 temp_len=len(imgs)//split_num
 base_paths=[]
 for i in range(split_num):

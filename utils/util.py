@@ -104,6 +104,8 @@ def cal_ETA(t_start, i, n_batch):
 
 
 def merge(images, size):
+    if images.shape[0] > size[0] * size[1]:
+        images = images[0:size[0] * size[1], ::]
     h, w = images.shape[1], images.shape[2]
     if (images.shape[3] in (3, 4)):
         c = images.shape[3]

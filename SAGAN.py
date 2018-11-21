@@ -142,7 +142,7 @@ class SAGAN_model(object):
         x = x / 127.5 - 1
         return x
 
-    def train_epoch(self, sess, train_next_element, i_epoch, n_batch):
+    def train_epoch(self, sess, train_next_element, i_epoch, n_batch, global_step):
         t_start = None
         for i_batch in range(n_batch):
             if i_batch == 1:
@@ -161,18 +161,21 @@ class SAGAN_model(object):
             if i_batch % self.args.n_critic == 0:
                 _, g_loss = sess.run([self.g_opt, self.g_loss], feed_dict=feed_dict_)
 
-            last_train_str = "[epoch:%d/%d, steps:%d/%d] -d_loss:%.4f - g_loss:%.4f" % (
-                i_epoch + 1, int(self.args.epochs), i_batch + 1, n_batch, d_loss, g_loss)
+            global_step += 1
+
+            last_train_str = "[epoch:%d/%d, steps:%d/%d, global_step:%d] -d_loss:%.4f - g_loss:%.4f" % (
+                i_epoch + 1, int(self.args.epochs), i_batch + 1, n_batch, global_step, d_loss, g_loss)
             if i_batch > 0:
                 last_train_str += (' -ETA:%ds' % util.cal_ETA(t_start, i_batch, n_batch))
             if (i_batch + 1) % 50 == 0 or i_batch == 0:
                 tf.logging.info(last_train_str)
 
             # show fake_imgs
-            if (i_batch + 1) % self.args.show_steps == 0:
-                steps = i_epoch * n_batch + i_batch + 1
-                tf.logging.info('generating fake imgs in steps %d...' % steps)
+            if global_step % self.args.show_steps == 0:
+                tf.logging.info('generating fake imgs in steps %d...' % global_step)
                 fake_imgs = sess.run(self.fake_images, feed_dict={self.z: batch_z})
                 manifold_h = int(np.floor(np.sqrt(self.args.sample_num)))
                 util.save_images(fake_imgs, [manifold_h, manifold_h],
-                                 image_path=os.path.join(self.args.result_dir,'fake_steps_' + str(steps) + '.jpg'))
+                                 image_path=os.path.join(self.args.result_dir,'fake_steps_' + str(global_step) + '.jpg'))
+
+        return global_step
