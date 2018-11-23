@@ -61,7 +61,7 @@ def spectral_conv2d(x, filters, kernel_size, stride, is_training, padding='SAME'
                             initializer=weight_init,
                             regularizer=weight_regularizer)
         x = tf.nn.conv2d(input=x,
-                         filter=spectral_norm(w, is_training=is_training),
+                         filter=spectral_norm(w, is_training),
                          strides=[1, stride, stride, 1],
                          padding=padding)
         if use_bias:
@@ -85,7 +85,7 @@ def spectral_deconv2d(x, filters, kernel_size, stride, is_training, padding='SAM
                             initializer=weight_init,
                             regularizer=weight_regularizer)
         x = tf.nn.conv2d_transpose(x,
-                                   filter=spectral_norm(w, is_training=is_training),
+                                   filter=spectral_norm(w, is_training),
                                    output_shape=output_shape,
                                    strides=[1, stride, stride, 1],
                                    padding=padding)
@@ -94,6 +94,12 @@ def spectral_deconv2d(x, filters, kernel_size, stride, is_training, padding='SAM
             x = tf.nn.bias_add(x, bias)
 
     return x
+
+
+def up_sample(x, scale_factor=2):
+    _, h, w, _ = x.get_shape().as_list()
+    new_size = [h * scale_factor, w * scale_factor]
+    return tf.image.resize_nearest_neighbor(x, size=new_size)
 
 
 def attention(x, filters, is_training, scope='attention', reuse=False):
@@ -119,3 +125,67 @@ def attention(x, filters, is_training, scope='attention', reuse=False):
         x = gamma * o + x
 
     return x
+
+
+def residual_block(inputs, output_channel, stride, is_training, scope='residual'):
+    with tf.variable_scope(scope):
+        x = spectral_conv2d(inputs, output_channel, 3, stride, is_training=is_training, use_bias=False, scope='conv_1')
+        x = batch_norm(x, is_training, scope='bn1')
+        x = prelu(x)
+        x = spectral_conv2d(x, output_channel, 3, stride, is_training=is_training, use_bias=False, scope='conv_2')
+        x = batch_norm(x, is_training, scope='bn2')
+        x = x + inputs
+
+    return x
+
+
+def discriminator_block(inputs, output_channel, kernel_size, stride, is_training, scope='d_residual'):
+    with tf.variable_scope(scope):
+        x = spectral_conv2d(inputs, output_channel, kernel_size, stride, is_training=is_training, use_bias=False,
+                            scope='conv_1')
+        x = tf.nn.leaky_relu(x, alpha=0.2)
+        x = spectral_conv2d(x, output_channel, kernel_size, stride, is_training=is_training, use_bias=False,
+                            scope='conv_2')
+        x = x + inputs
+
+    return x
+
+
+def prelu(x):
+    alphas = tf.get_variable('alpha', shape_list(x)[-1],
+                             initializer=tf.constant_initializer(0.0),
+                             dtype=tf.float32)
+    pos = tf.nn.relu(x)
+    neg = alphas * (x - abs(x)) * 0.5
+
+    return pos + neg
+
+
+def PhaseShift(inputs, shape_1, shape_2):
+    # Tackle the condition when the batch is None
+    X = tf.reshape(inputs, shape_1)  # [bs, h, w, 2, 2]
+    X = tf.transpose(X, [0, 1, 3, 2, 4])  # [bs, h, 2, w, 2]
+
+    return tf.reshape(X, shape_2)
+
+
+# The implementation of PixelShuffler
+def PixelShuffler(inputs, scale=2):
+    size = shape_list(inputs)  # inputs [bs, h, w, 256]
+    batch_size = size[0]
+    h = size[1]
+    w = size[2]
+    c = size[-1]
+
+    # Get the target channel size
+    channel_target = c // (scale * scale)  # 256/4=64
+    channel_factor = c // channel_target  # 256/64=4
+
+    shape_1 = [batch_size, h, w, channel_factor // scale, channel_factor // scale]  # [bs, h, w, 2, 2]
+    shape_2 = [batch_size, h * scale, w * scale, 1]  # [bs, 2h, 2w, 1]
+
+    # Reshape and transpose for periodic shuffling for each channel
+    input_split = tf.split(inputs, channel_target, axis=3)  # [bs, h, w, 4] * 64
+    output = tf.concat([PhaseShift(x, shape_1, shape_2) for x in input_split], axis=3)  # [bs, 2h, 2w, 64]
+
+    return output

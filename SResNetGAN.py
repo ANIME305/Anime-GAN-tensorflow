@@ -5,12 +5,11 @@ from utils import util
 import os
 
 
-class SAGAN_model(object):
+class SResNetGAN_model(object):
     def __init__(self, args):
         self.args = args
         self.d_loss_log = []
         self.g_loss_log = []
-        self.layer_num = int(np.log2(self.args.img_size[0])) - 3
 
         # inputs
         self.is_training = tf.placeholder_with_default(False, (), name='is_training')
@@ -67,83 +66,80 @@ class SAGAN_model(object):
 
     def generator(self, z, reuse=False):
         with tf.variable_scope("generator", reuse=reuse):
-            ch = self.args.g_filters
-            x = spectral_deconv2d(z, filters=ch, kernel_size=4, stride=1, is_training=self.is_training, padding='VALID',
-                                  use_bias=False, scope='deconv2d')
+            x = spectral_deconv2d(z, filters=64, kernel_size=16, stride=1, is_training=self.is_training,
+                                  padding='VALID', use_bias=False, scope='deconv2d')
             x = batch_norm(x, self.is_training, scope='batch_norm')
-            x = tf.nn.leaky_relu(x, alpha=0.2)
+            x = prelu(x)
 
-            for i in range(self.layer_num // 2):
-                with tf.variable_scope('layer' + str(i)):
-                    if self.args.up_sample:
-                        x = up_sample(x, scale_factor=2)
-                        x = spectral_conv2d(x, filters=ch // 2, kernel_size=3, stride=1, is_training=self.is_training,
-                                            padding='SAME', scope='up_conv2d_' + str(i))
-                    else:
-                        x = spectral_deconv2d(x, filters=ch // 2, kernel_size=4, stride=2, is_training=self.is_training,
-                                              use_bias=False, scope='deconv2d_' + str(i))
-                    x = batch_norm(x, self.is_training, scope='batch_norm_' + str(i))
-                    x = tf.nn.leaky_relu(x, alpha=0.2)
+            stage1_output = x
 
-                    ch = ch // 2
+            for i in range(self.args.g_layer_num):
+                x = residual_block(x, output_channel=64, stride=1, is_training=self.is_training,
+                                   scope='residual_' + str(i + 1))
 
             # Self Attention
-            x = attention(x, ch, is_training=self.is_training, scope="attention", reuse=reuse)
+            x = attention(x, 64, is_training=self.is_training, scope="attention", reuse=reuse)
 
-            for i in range(self.layer_num // 2, self.layer_num):
-                with tf.variable_scope('layer' + str(i)):
-                    if self.args.up_sample:
-                        x = up_sample(x, scale_factor=2)
-                        x = spectral_conv2d(x, filters=ch // 2, kernel_size=3, stride=1, is_training=self.is_training,
-                                            padding='SAME', scope='up_conv2d_' + str(i))
-                    else:
-                        x = spectral_deconv2d(x, filters=ch // 2, kernel_size=4, stride=2, is_training=self.is_training,
-                                              use_bias=False, scope='deconv2d_' + str(i))
-                    x = batch_norm(x, self.is_training, scope='batch_norm_' + str(i))
-                    x = tf.nn.leaky_relu(x, alpha=0.2)
+            with tf.variable_scope('resblock_output'):
+                x = spectral_conv2d(x, 64, 3, 1, is_training=self.is_training, use_bias=False, scope='conv')
+                x = batch_norm(x, self.is_training)
 
+            x = x + stage1_output
+
+            ch = 512
+            for i in range(int(np.log2(self.args.img_size[0] // 16))):
+                with tf.variable_scope('subpixelconv_stage' + str(i + 1)):
+                    x = spectral_conv2d(x, 256, 3, 1, is_training=self.is_training, scope='conv')
+                    x = PixelShuffler(x, scale=2)
+                    x = batch_norm(x, self.is_training)
+                    x = prelu(x)
                     ch = ch // 2
 
-            if self.args.up_sample:
-                x = up_sample(x, scale_factor=2)
-                x = spectral_conv2d(x, filters=self.args.img_size[2], kernel_size=3, stride=1,
-                                    is_training=self.is_training,
-                                    padding='SAME', scope='G_conv_logit')
-            else:
-                x = spectral_deconv2d(x, filters=self.args.img_size[2], kernel_size=4, stride=2,
-                                      is_training=self.is_training,
-                                      use_bias=False, scope='G_deconv_logit')
+            x = spectral_conv2d(x, filters=self.args.img_size[2], kernel_size=9, stride=1, is_training=self.is_training,
+                                padding='SAME', scope='G_conv_logit')
             x = tf.nn.tanh(x)
 
             return x
 
     def discriminator(self, x, reuse=False):
         with tf.variable_scope("discriminator", reuse=reuse):
-            ch = self.args.d_filters
-            x = spectral_conv2d(x, filters=ch, kernel_size=4, stride=2, is_training=self.is_training, padding='SAME',
-                                use_bias=False, scope='conv2d')
-            x = tf.nn.leaky_relu(x, alpha=0.2)
-
-            for i in range(self.layer_num // 2):
-                x = spectral_conv2d(x, filters=ch * 2, kernel_size=4, stride=2, is_training=self.is_training,
-                                    padding='SAME', use_bias=False,
-                                    scope='conv2d_' + str(i))
-                x = batch_norm(x, self.is_training, scope='batch_norm' + str(i))
+            with tf.variable_scope('blocks1'):
+                x = spectral_conv2d(x, filters=32, kernel_size=4, stride=2, is_training=self.is_training,
+                                    scope='conv2d')  # 64*64
                 x = tf.nn.leaky_relu(x, alpha=0.2)
+                x = discriminator_block(x, 32, 3, 1, is_training=self.is_training, scope='d_residual_1')
+                x = discriminator_block(x, 32, 3, 1, is_training=self.is_training, scope='d_residual_2')
 
-                ch = ch * 2
+            with tf.variable_scope('blocks2'):
+                x = spectral_conv2d(x, filters=64, kernel_size=4, stride=2, is_training=self.is_training,
+                                    scope='conv2d')  # 32*32
+                x = tf.nn.leaky_relu(x, alpha=0.2)
+                x = discriminator_block(x, 64, 3, 1, is_training=self.is_training, scope='d_residual_3')
+                x = discriminator_block(x, 64, 3, 1, is_training=self.is_training, scope='d_residual_4')
+
+            with tf.variable_scope('blocks3'):
+                x = spectral_conv2d(x, filters=128, kernel_size=4, stride=2, is_training=self.is_training,
+                                    scope='conv2d')  # 16*16
+                x = tf.nn.leaky_relu(x, alpha=0.2)
+                x = discriminator_block(x, 128, 3, 1, is_training=self.is_training, scope='d_residual_5')
+                x = discriminator_block(x, 128, 3, 1, is_training=self.is_training, scope='d_residual_6')
 
             # Self Attention
-            x = attention(x, ch, is_training=self.is_training, scope="attention", reuse=reuse)
+            x = attention(x, 128, is_training=self.is_training, scope="attention", reuse=reuse)
 
-            for i in range(self.layer_num // 2, self.layer_num):
-                x = spectral_conv2d(x, filters=ch * 2, kernel_size=4, stride=2, is_training=self.is_training,
-                                    padding='SAME', use_bias=False,
-                                    scope='conv2d_' + str(i))
-                x = batch_norm(x, self.is_training, scope='batch_norm' + str(i))
+            with tf.variable_scope('blocks4'):
+                x = spectral_conv2d(x, filters=256, kernel_size=4, stride=2, is_training=self.is_training,
+                                    scope='conv2d')  # 8*8
                 x = tf.nn.leaky_relu(x, alpha=0.2)
+                x = discriminator_block(x, 256, 3, 1, is_training=self.is_training, scope='d_residual_7')
+                x = discriminator_block(x, 256, 3, 1, is_training=self.is_training, scope='d_residual_8')
 
-                ch = ch * 2
+            with tf.variable_scope('blocks5'):
+                x = spectral_conv2d(x, filters=512, kernel_size=4, stride=2, is_training=self.is_training,
+                                    scope='conv2d')  # 4*4
+                x = tf.nn.leaky_relu(x, alpha=0.2)
+                x = discriminator_block(x, 512, 3, 1, is_training=self.is_training, scope='d_residual_9')
+                x = discriminator_block(x, 512, 3, 1, is_training=self.is_training, scope='d_residual_10')
 
             x = spectral_conv2d(x, filters=1, kernel_size=4, padding='VALID', stride=1, is_training=self.is_training,
                                 use_bias=False,
@@ -194,7 +190,7 @@ class SAGAN_model(object):
                 if z_fix is not None:
                     show_z = z_fix
                 else:
-                    show_z = truncated_norm.rvs([self.args.batch_size, 1, 1, self.args.z_dim])
+                    show_z = batch_z
                 fake_imgs = sess.run(self.fake_images, feed_dict={self.z: show_z})
                 manifold_h = int(np.floor(np.sqrt(self.args.sample_num)))
                 util.save_images(fake_imgs, [manifold_h, manifold_h],

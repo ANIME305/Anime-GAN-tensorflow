@@ -9,6 +9,11 @@ from tqdm import tqdm
 import time
 import scipy.misc
 import numpy as np
+from scipy.stats import truncnorm
+
+
+def get_truncated_normal(mean=0, sd=0.5):
+    return truncnorm((sd*-2 - mean) / sd, (sd*2 - mean) / sd, loc=mean, scale=sd)
 
 
 def check_folder(log_dir):

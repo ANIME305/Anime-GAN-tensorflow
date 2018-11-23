@@ -1,11 +1,12 @@
 import cv2
 from glob import glob
 
-imgs = glob('../dataset/GetChu/*')
+imgs1 = glob('../dataset/GetChu_1-75/*')
+imgs2 = glob('../dataset/GetChu_76-118/*')
+imgs = imgs1+imgs2
 print(len(imgs))
 
 from tqdm import tqdm
-from threadpool import ThreadPool, makeRequests
 
 
 def detect_face(imgs):
@@ -18,9 +19,9 @@ def detect_face(imgs):
         for i, face in enumerate(faces):
             (stx, sty, w, h) = face
             stx -= (w * 0.3)
-            sty -= (h * 0.4)
-            w *= 1.6
-            h *= 1.75
+            sty -= (h * 0.3)
+            w *= 1.5
+            h *= 1.45
             stx = max(0, stx)
             sty = max(0, sty)
             name = img.split('/')[-1].split('.')[0] + '_face' + str(i) + '.jpg'
@@ -30,7 +31,7 @@ def detect_face(imgs):
 
 from multiprocessing import Pool
 # 分割path
-split_num=4
+split_num=8
 temp_len=len(imgs)//split_num
 base_paths=[]
 for i in range(split_num):
