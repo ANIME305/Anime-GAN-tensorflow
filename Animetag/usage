@@ -1,4 +1,4 @@
-use get_model.sh to download the pretrained weights from https://github.com/rezoo/illustration2vec [1]
+use get_models.sh to download the pretrained weights from https://github.com/rezoo/illustration2vec [1]
 
 [1]Saito M , Matsui Y . Illustration2Vec: a semantic vector representation of illustrations
    // SIGGRAPH ASIA 2015 Technical Briefs. ACM, 2015.
