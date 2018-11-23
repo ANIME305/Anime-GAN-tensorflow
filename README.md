@@ -10,6 +10,11 @@ Implemented with Attention, Conv2DTranspose, hinge loss and spectral norm.
 
 The SAGAN was trained in batchsize=64 and cost only 3GB GPU memory. 
 
+#### results
+
+61600 steps
+
+![61600 steps](pictures/fake_steps_61600.jpg)
 
 ### Model Records
 
@@ -31,9 +36,21 @@ SResNetGAN_V1: SResNetGAN + deconv
 
 - Use Conv2DTranspose instead of Upsampling can improve the quality of images, and Upsampling also loses some diversities.
 
-- It is normal that the hinge loss of discriminator equals 0 occasionally during the training.
-
 - Bigger batch size (128, 256,...) dosen't achieve better performance in this project (not sure).
 
-- Ensure enough steps to train (at least 60k).
+- Ensure enough steps to train (at least 50k).
+
+### Questions
+
+- Pixelshuffle works bad (pool diversity).
+
+- The hinge loss of discriminator usually equals 0 during the second half of training.
+
+### TODO
+
+- Add ExponentialMovingAverage to the generator.
+
+- Add labels from illustration2vec.
+
+- Learning rate exponentially decease after 50000 iterations of training.
 
