@@ -29,6 +29,7 @@ BIGGAN 12600 steps
 ### Loss
 
 ![g_loss](pictures/g_loss.png)![d_loss](pictures/d_loss.png)
+
 Why the generator loss is crippled in 15k steps?
 
 ### Model Records
