@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensor2tensor.layers.common_layers import shape_list
+from tensor2tensor.layers.common_layers import shape_list, dense
 
 weight_init = tf.truncated_normal_initializer(mean=0.0, stddev=0.02)
 weight_regularizer = None
@@ -39,8 +39,8 @@ def spectral_norm(w, is_training, iteration=1):
     w_norm = w / sigma
 
     # Update estimated 1st singular vector while training
-    with tf.control_dependencies(
-            [tf.cond(is_training, true_fn=lambda: u.assign(u_norm), false_fn=lambda: u.assign(u))]):
+    with tf.control_dependencies([tf.cond(is_training,
+                                          true_fn=lambda: u.assign(u_norm), false_fn=lambda: u.assign(u))]):
         w_norm = tf.reshape(w_norm, w_shape)
 
     return w_norm
@@ -115,7 +115,6 @@ def attention(x, filters, is_training, scope='attention', reuse=False):
         g_flatten = flatten(g)
 
         s = tf.matmul(g_flatten, f_flatten, transpose_b=True)  # [bs, N, N]
-
         beta = tf.nn.softmax(s, axis=-1)  # attention map
 
         o = tf.matmul(beta, flatten(h))  # [bs, N, N]*[bs, N, c]->[bs, N, c]
@@ -189,3 +188,36 @@ def PixelShuffler(inputs, scale=2):
     output = tf.concat([PhaseShift(x, shape_1, shape_2) for x in input_split], axis=3)  # [bs, 2h, 2w, 64]
 
     return output
+
+
+# ResBlock in BigGAN
+def ResBlockUp(inputs, output_channel, is_training, scope='residual', reuse=False):
+    with tf.variable_scope(scope, reuse=reuse):
+        x = batch_norm(inputs, is_training, scope='bn1')
+        x = tf.nn.leaky_relu(x)
+        x = spectral_deconv2d(x, output_channel, 3, stride=2, is_training=is_training, scope='deconv1')
+        x = batch_norm(x, is_training, scope='bn2')
+        x = tf.nn.leaky_relu(x)
+        x = spectral_conv2d(x, output_channel, 3, stride=1, is_training=is_training, scope='conv1')
+
+        # skip
+        skip = spectral_deconv2d(inputs, output_channel, 3, stride=2, is_training=is_training, scope='deconv_skip')
+        x = x + skip
+
+    return x
+
+
+def ResBlockDown(inputs, output_channel, is_training, scope='residual', reuse=False):
+    with tf.variable_scope(scope, reuse=reuse):
+        x = batch_norm(inputs, is_training, scope='bn1')
+        x = tf.nn.leaky_relu(x)
+        x = spectral_conv2d(x, output_channel, 3, stride=2, is_training=is_training, scope='conv1')
+        x = batch_norm(x, is_training, scope='bn2')
+        x = tf.nn.leaky_relu(x)
+        x = spectral_conv2d(x, output_channel, 3, stride=1, is_training=is_training, scope='conv2')
+
+        # skip
+        skip = spectral_conv2d(inputs, output_channel, 3, stride=2, is_training=is_training, scope='conv_skip')
+        x = x + skip
+
+    return x

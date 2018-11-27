@@ -37,23 +37,42 @@ class SAGAN_model(object):
         d_vars = [var for var in t_vars if 'discriminator' in var.name]
         g_vars = [var for var in t_vars if 'generator' in var.name]
 
+        # global step
+        self.global_step = tf.get_variable('global_step', initializer=tf.constant(0), trainable=False)
+        self.add_step = self.global_step.assign(self.global_step + 1)
+
         # optimizers
+        self.d_lr = tf.train.exponential_decay(self.args.d_lr,
+                                               tf.maximum(self.global_step - self.args.decay_start_steps, 0),
+                                               self.args.decay_steps,
+                                               self.args.decay_rate)
+        self.g_lr = tf.train.exponential_decay(self.args.g_lr,
+                                               tf.maximum(self.global_step - self.args.decay_start_steps, 0),
+                                               self.args.decay_steps,
+                                               self.args.decay_rate)
+
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        global_step = tf.train.get_or_create_global_step()
         with tf.control_dependencies(update_ops):
             d_grads = tf.gradients(self.d_loss, d_vars)
-            self.d_grads_norm = tf.zeros([1])
-            for g in d_grads:
-                self.d_grads_norm += tf.norm(g)
-            d_opt = tf.train.AdamOptimizer(self.args.d_lr, beta1=self.args.beta1, beta2=self.args.beta2)
-            self.train_d = d_opt.apply_gradients(zip(d_grads, d_vars), global_step=global_step)
+            d_opt = tf.train.AdamOptimizer(self.d_lr, beta1=self.args.beta1, beta2=self.args.beta2)
+            self.train_d = d_opt.apply_gradients(zip(d_grads, d_vars))
 
             g_grads = tf.gradients(self.g_loss, g_vars)
-            self.g_grads_norm = tf.zeros([1])
-            for g in g_grads:
-                self.g_grads_norm += tf.norm(g)
-            g_opt = tf.train.AdamOptimizer(self.args.g_lr, beta1=self.args.beta1, beta2=self.args.beta2)
-            self.train_g = g_opt.apply_gradients(zip(g_grads, g_vars), global_step=global_step)
+            g_opt = tf.train.AdamOptimizer(self.g_lr, beta1=self.args.beta1, beta2=self.args.beta2)
+            self.train_g = g_opt.apply_gradients(zip(g_grads, g_vars))
+
+            # EMA for generator
+            with tf.variable_scope("EMA_Weights"):
+                if self.args.ema_decay is not None:
+                    self.var_ema = tf.train.ExponentialMovingAverage(self.args.ema_decay, num_updates=self.global_step)
+                    with tf.control_dependencies([self.train_g]):
+                        self.ema_train_g = self.var_ema.apply(tf.trainable_variables(scope='generator'))
+                    # assign ema weights
+                    self.assign_vars = []
+                    for var in tf.trainable_variables(scope='generator'):
+                        v = self.var_ema.average(var)
+                        if v is not None:
+                            self.assign_vars.append(tf.assign(var, v))
 
     def discriminator_loss(self, d_logits_real, d_logits_fake):
         real_loss = tf.reduce_mean(tf.nn.relu(1.0 - d_logits_real))
@@ -156,8 +175,9 @@ class SAGAN_model(object):
         x = x / 127.5 - 1
         return x
 
-    def train_epoch(self, sess, train_next_element, i_epoch, n_batch, global_step, truncated_norm, z_fix=None):
+    def train_epoch(self, sess, saver, train_next_element, i_epoch, n_batch, truncated_norm, z_fix=None):
         t_start = None
+        global_step = 0
         for i_batch in range(n_batch):
             if i_batch == 1:
                 t_start = time.time()
@@ -168,28 +188,38 @@ class SAGAN_model(object):
                           self.z: batch_z,
                           self.is_training: True}
             # update D network
-            _, d_loss, d_grads_norm = sess.run([self.train_d, self.d_loss, self.d_grads_norm], feed_dict=feed_dict_)
+            _, d_loss, d_lr, g_lr = sess.run([self.train_d, self.d_loss, self.d_lr, self.g_lr], feed_dict=feed_dict_)
             self.d_loss_log.append(d_loss)
 
             # update G network
             g_loss = None
-            g_grads_norm = None
             if i_batch % self.args.n_critic == 0:
-                _, g_loss, g_grads_norm = sess.run([self.train_g, self.g_loss, self.g_grads_norm], feed_dict=feed_dict_)
-                self.g_loss_log.append(g_loss)
+                if self.args.ema_decay is not None:
+                    _, g_loss, _, global_step = sess.run(
+                        [self.ema_train_g, self.g_loss, self.add_step, self.global_step], feed_dict=feed_dict_)
+                else:
+                    _, g_loss, _, global_step = sess.run([self.train_g, self.g_loss, self.add_step, self.global_step],
+                                                         feed_dict=feed_dict_)
+            self.g_loss_log.append(g_loss)
 
-            global_step += 1
-
-            last_train_str = "[epoch:%d/%d, global_step:%d] -d_loss:%.3f - g_loss:%.3f -d_norm:%.3f -g_norm:%.3f" % (
-                i_epoch + 1, int(self.args.epochs), global_step, d_loss, g_loss, d_grads_norm, g_grads_norm)
+            last_train_str = "[epoch:%d/%d, global_step:%d] -d_loss:%.3f - g_loss:%.3f -d_lr:%.e -g_lr:%.e" % (
+                i_epoch + 1, int(self.args.epochs), global_step, d_loss, g_loss, d_lr, g_lr)
             if i_batch > 0:
                 last_train_str += (' -ETA:%ds' % util.cal_ETA(t_start, i_batch, n_batch))
-            if (i_batch + 1) % 10 == 0 or i_batch == 0:
+            if (i_batch + 1) % 20 == 0 or i_batch == 0:
                 tf.logging.info(last_train_str)
 
             # show fake_imgs
             if global_step % self.args.show_steps == 0:
                 tf.logging.info('generating fake imgs in steps %d...' % global_step)
+                # do ema
+                if self.args.ema_decay is not None:
+                    # save temp weights for generator
+                    saver.save(sess, os.path.join(self.args.checkpoint_dir, 'temp_model.ckpt'))
+                    sess.run(self.assign_vars, feed_dict={self.inputs: batch_imgs,
+                                                          self.z:batch_z,
+                                                          self.is_training: False})
+                    tf.logging.info('After EMA...')
 
                 if z_fix is not None:
                     show_z = z_fix
@@ -200,5 +230,9 @@ class SAGAN_model(object):
                 util.save_images(fake_imgs, [manifold_h, manifold_h],
                                  image_path=os.path.join(self.args.result_dir,
                                                          'fake_steps_' + str(global_step) + '.jpg'))
+                if self.args.ema_decay is not None:
+                    # restore temp weights for generator
+                    saver.restore(sess, os.path.join(self.args.checkpoint_dir, 'temp_model.ckpt'))
+                    tf.logging.info('Recover weights over...')
 
         return global_step, self.d_loss_log, self.g_loss_log
