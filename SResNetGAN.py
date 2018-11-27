@@ -86,14 +86,12 @@ class SResNetGAN_model(object):
 
             x = x + stage1_output
 
-            ch = 512
             for i in range(int(np.log2(self.args.img_size[0] // 16))):
                 with tf.variable_scope('subpixelconv_stage' + str(i + 1)):
                     x = spectral_conv2d(x, 256, 3, 1, is_training=self.is_training, scope='conv')
                     x = PixelShuffler(x, scale=2)
                     x = batch_norm(x, self.is_training)
                     x = prelu(x)
-                    ch = ch // 2
 
             x = spectral_conv2d(x, filters=self.args.img_size[2], kernel_size=9, stride=1, is_training=self.is_training,
                                 padding='SAME', scope='G_conv_logit')

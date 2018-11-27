@@ -1,5 +1,6 @@
 import SResNetGAN
 import SAGAN
+import BigGAN
 import argparse
 from utils import util
 import os
@@ -8,14 +9,14 @@ import tensorflow as tf
 import math
 import pandas as pd
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '7'
+os.environ["CUDA_VISIBLE_DEVICES"] = '6'
 
 
 def parse_args():
     desc = "Self-Attention GAN"
     parser = argparse.ArgumentParser(description=desc)
     # important!!!
-    parser.add_argument('--name', type=str, default='SResNetGAN_V1', help='model name')
+    parser.add_argument('--name', type=str, default='BIGGAN_V1', help='model name')
 
     parser.add_argument('--img_size', type=list, default=[128, 128, 3], help='img size')
     parser.add_argument('--fix_z', type=bool, default=False, help='whether fix the z feature')
@@ -23,8 +24,8 @@ def parse_args():
     parser.add_argument('--z_dim', type=int, default=128, help='dim of noises')
 
     # for SAGAN
-    parser.add_argument('--d_filters', type=int, default=64, help='The filters in discriminator')
-    parser.add_argument('--g_filters', type=int, default=1024, help='The filters in generator')
+    parser.add_argument('--d_filters', type=int, default=32, help='The filters in discriminator')
+    parser.add_argument('--g_filters', type=int, default=2048, help='The filters in generator')
     parser.add_argument('--up_sample', type=bool, default=False, help='upsampling or deconv in generator')
 
     # for SResNetGAN
@@ -32,6 +33,10 @@ def parse_args():
 
     parser.add_argument('--epochs', type=int, default=400, help='Total epochs to train')
     parser.add_argument('--batch_size', type=int, default=64, help='The size of batch')
+    parser.add_argument('--ema_decay', type=int, default=0.995, help='The ema decay for the generator')
+    parser.add_argument('--decay_start_steps', type=int, default=1000000, help='The steps start to use exponential decay')
+    parser.add_argument('--decay_rate', type=int, default=0.99, help='decay rate')
+    parser.add_argument('--decay_steps', type=int, default=100, help='decay steps')
     parser.add_argument('--show_steps', type=int, default=100, help='steps to show imgs')
     parser.add_argument('--sample_num', type=int, default=64, help='num of imgs to show')
     parser.add_argument('--max_to_keep', type=int, default=10, help='num of saved models to keep')
@@ -89,7 +94,8 @@ def main():
     sess_config.gpu_options.allow_growth = True
     with tf.Session(config=sess_config) as sess:
         # model = SAGAN.SAGAN_model(args)
-        model = SAGAN.SAGAN_model(args)
+        # model = SAGAN.SAGAN_model(args)
+        model = BigGAN.BIGGAN_model(args)
         tf.logging.info('model init over...')
 
         # show network architecture
@@ -103,7 +109,6 @@ def main():
         saver = tf.train.Saver(max_to_keep=args.max_to_keep)
 
         n_batch = total_num // args.batch_size
-        global_step = 0
         truncated_norm = util.get_truncated_normal(0.0, args.std)
         # fixed z
         z_fix = None
@@ -112,8 +117,8 @@ def main():
         for i_epoch in range(args.epochs):
             tf.logging.info("***** Epoch %d *****", i_epoch + 1)
             # training
-            global_step, d_loss_log, g_loss_log = model.train_epoch(sess, train_next_element, i_epoch, n_batch,
-                                                                    global_step, truncated_norm, z_fix)
+            global_step, d_loss_log, g_loss_log = model.train_epoch(sess, saver, train_next_element, i_epoch, n_batch,
+                                                                    truncated_norm, z_fix)
             result = pd.DataFrame([d_loss_log, g_loss_log], index=['d_loss', 'g_loss']).transpose()
             result.to_csv(args.log_dir + args.name + '_results.csv', index=None)
 
