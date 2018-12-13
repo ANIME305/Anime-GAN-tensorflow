@@ -18,17 +18,17 @@ The BIGGAN was trained in batchsize=64 and cost 16GB GPU memory. It needs only 1
 
 ### results
 
-SAGAN 61600 steps
-
-![61600 steps](pictures/fake_steps_61600.jpg)
-
-BIGGAN 12600 steps
+state-of-art BIGGAN 12600 steps
 
 ![12600 steps](pictures/fake_steps_12600.jpg)
 
 GIF
 
 ![gif](pictures/GanGIF.gif)
+
+SAGAN 61600 steps (without the residual structure)
+
+![61600 steps](pictures/fake_steps_61600.jpg)
 
 ### Open sourced dataset
 We decide to opensource our used datasets.
