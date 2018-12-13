@@ -26,6 +26,11 @@ BIGGAN 12600 steps
 
 ![12600 steps](pictures/fake_steps_12600.jpg)
 
+### Open sourced dataset
+We decide to opensource our used datasets as the saying goes: 天下漫友是一家！
+the datasets are handlely cleaned and labeled, enjoy your own Playground with Gan! LOL
+url:https://pan.baidu.com/s/1xXPeqr6SDnQkaNZcVHCZ7Q  extracting-code:u3bi
+
 ### Loss
 
 ![g_loss](pictures/g_loss.png)![d_loss](pictures/d_loss.png)
@@ -73,7 +78,9 @@ BIGGAN_V0: BIGGAN + generator 512
 
 - [x] Add ExponentialMovingAverage to the generator
 - [x] Learning rate exponentially decease after 50000 iterations of training (failed, not sure).
-- [ ] Add labels from illustration2vec.
+- [x] Add labels from illustration2vec.
+
+ 
 
 
 
