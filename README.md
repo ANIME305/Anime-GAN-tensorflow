@@ -26,12 +26,18 @@ BIGGAN 12600 steps
 
 ![12600 steps](pictures/fake_steps_12600.jpg)
 
+GIF
+
+![gif](pictures/GanGIF.gif)
+
 ### Open sourced dataset
 We decide to opensource our used datasets.
 
-the datasets are handlely cleaned and labeled, enjoy your own Playground with Gan! LOL
+The datasets are handlely cleaned and labeled, enjoy your own Playground with Gan! LOL
 
-url:https://pan.baidu.com/s/1xXPeqr6SDnQkaNZcVHCZ7Q  extracting-code:u3bi
+url:https://pan.baidu.com/s/1xXPeqr6SDnQkaNZcVHCZ7Q  
+
+extracting-code:u3bi
 
 ### Loss
 
